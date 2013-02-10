@@ -11,7 +11,7 @@ local share = LrView.share
 local logger = LrLogger('WebHooks')
 
 logger:enable("print")
-logger:trace("Loading module...")
+logger:info("Loading module...")
 
 
 local publisher = {}
@@ -30,43 +30,76 @@ publisher.canExportVideo = false
 
 
 publisher.exportPresetFields = {
-	{ key = 'url', default = 'http://example.com/endpoint' },
-	{ key = 'method', default = 'POST' }
+	{key='url', default='http://example.com/endpoint'},
+	{key='extraData', default=''},
+	{key='metadata', default='title,caption,keywordTags'},
 }
 
--- publisher.startDialog = function( propertyTable )
+-- publisher.startDialog = function(propertyTable)
 -- end
 
 
-publisher.sectionsForTopOfDialog = function( f, propertyTable )
+local function url_decode(url)
+	return (url:gsub('+', ' '):gsub("%%(%x%x)", function(encoded)
+		return string.char(tonumber(encoded, 16))
+	end))
+end
+
+function url_split(url)
+	local data = {}
+	for pair in url:gmatch("[^&]+") do
+	    local key, value = pair:match("([^=]*)=(.*)")
+	    if not key then
+	    	error("Invalid query string")
+	   	end
+	    data[key] = url_decode(value)
+	end
+	return data
+end
+
+
+publisher.sectionsForTopOfDialog = function(f, propertyTable)
 	return {
 		{
 			title = "Web Hooks",
 
 			f:row {
 				f:static_text {
-					title = "URL",
+					title = "Endpoint URL",
 					width = share 'WebHookTitleSectionLabel'
 				},
 				f:edit_field {
 					value = bind 'url',
 					immediate = false,
-					width = 450
-				}
+					width = 375
+				},
 			},
 
 			f:row {
 				f:static_text {
-					title = "Method",
+					title = "Metadata to Include\n(comma or space seperated)",
 					width = share 'WebHookTitleSectionLabel'
 				},
-				f:popup_menu {
-					value = bind 'method',
-					items = {
-						{ value = 'POST', title = 'POST' },
-					}
-				}
-			}
+				f:edit_field {
+					value = bind 'metadata',
+					immediate = false,
+					width = 375,
+					height_in_lines = 2,
+				},
+			},
+
+			f:row {
+				f:static_text {
+					title = "Extra Data\n(query encoded)",
+					width = share 'WebHookTitleSectionLabel'
+				},
+				f:edit_field {
+					value = bind 'extraData',
+					immediate = false,
+					width = 375,
+					height_in_lines = 5,
+				},
+			},
 
 		}
 	}
@@ -74,53 +107,76 @@ publisher.sectionsForTopOfDialog = function( f, propertyTable )
 end
 
 
-local uploadPhoto = function ( propertyTable, params )
+local uploadPhoto = function (propertyTable, params)
+	
+	local log
 
-	local form = {
-		title = params.photo:getFormattedMetadata( 'title' ),
-		caption = params.photo:getFormattedMetadata( 'caption' ),
-		keywordTags = params.photo:getFormattedMetadata( 'keywordTagsForExport' )
+	local postData = {}
+
+	-- Include requested metadata.
+	for name in string.gmatch(propertyTable.metadata, "%a+") do
+		local value = params.photo:getFormattedMetadata(name)
+		if value then
+			postData[#postData + 1] = {name=name, value=value}
+		end
+	end
+
+	-- Add extra data over metadata.
+	if propertyTable.extraData then
+		for name, value in pairs(url_split(propertyTable.extraData)) do
+			postData[#postData + 1] = {name=name, value=value}
+		end
+	end
+
+	-- Log what we are posting.
+	log = string.format("POST to %s:", propertyTable.url)
+	for i = 1, #postData do
+		log = log .. string.format("\n\t%s: \"%s\"", postData[i].name, postData[i].value)
+	end
+	logger:trace(log)
+
+	-- Add the photo itself.
+	local filePath = params.filePath
+	local fileName = LrPathUtils.leafName(filePath)
+	postData[#postData + 1] = {
+		name='photo',
+		fileName=fileName,
+		filePath=filePath,
+		contentType='image/jpeg',
 	}
 
-	local mimeChunks = {}
-	for argName, argValue in pairs( form ) do
-		mimeChunks[ #mimeChunks + 1 ] = { name = argName, value = argValue }
+
+	local body, headers = LrHttp.postMultipart(propertyTable.url, postData)
+	logger:tracef("Body: %s", body)
+
+	log = "Response Headers:"
+	for i = 1, #headers do
+		local header = headers[i]
+		log = log .. string.format("\n\t%s: \"%s\"", header.field, header.value)
 	end
-
-	local filePath = params.filePath
-	local fileName = LrPathUtils.leafName( filePath )
-	mimeChunks[ #mimeChunks + 1 ] = { name = 'photo', fileName = fileName, filePath = filePath, contentType = 'image/jpeg' }
-
-	logger:tracef("POSTing to %s", propertyTable.url)
-
-	local result, hdrs = LrHttp.postMultipart( propertyTable.url, mimeChunks )
-	logger:tracef("Body: %s", result)
-	logger:trace("Headers:")
-	for i = 1, #hdrs do
-		local hdr = hdrs[i]
-		logger:tracef("\t%s: \"%s\"", hdr.field, hdr.value)
-	end
+	logger:trace(log)
 
 end
 
-publisher.processRenderedPhotos = function( functionContext, exportContext )
+publisher.processRenderedPhotos = function(functionContext, exportContext)
+
 	-- See page 54 of the PDF for an example loop.
 	
 	local exportSession = exportContext.exportSession
-	local exportSettings = assert( exportContext.propertyTable )
+	local propertyTable = assert(exportContext.propertyTable)
 
 	local nPhotos = exportSession:countRenditions()
-	local progressScope = exportContext:configureProgress {
+	local progressScope = exportContext:configureProgress({
 		title = nPhotos > 1
-					and LOC( "POSTing ^1 photos to WebHook", nPhotos )
-					or LOC "POSTing one photo to WebHook",
-	}
+			and string.format("POSTing %d photos to WebHook", nPhotos)
+			or "POSTing one photo to WebHook"
+	})
 
 	for i, rendition in exportContext:renditions { stopIfCanceled = true } do
 	
 		-- Update progress scope.
 		
-		progressScope:setPortionComplete( ( i - 1 ) / nPhotos )
+		progressScope:setPortionComplete((i - 1) / nPhotos)
 		
 		-- Get next photo.
 
@@ -130,12 +186,12 @@ publisher.processRenderedPhotos = function( functionContext, exportContext )
 
 			local success, pathOrMessage = rendition:waitForRender()
 
-			progressScope:setPortionComplete( ( i - 0.5 ) / nPhotos )
+			progressScope:setPortionComplete((i - 0.5) / nPhotos)
 			if progressScope:isCanceled() then break end
 			
 			
 			if success then
-				uploadPhoto( exportSettings, {
+				uploadPhoto(propertyTable, {
 					photo = photo,
 					filePath = pathOrMessage,
 				})
