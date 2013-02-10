@@ -77,7 +77,6 @@ end
 local uploadPhoto = function ( propertyTable, params )
 
 	local form = {
-		-- key = "value"
 		title = params.photo:getFormattedMetadata( 'title' ),
 		caption = params.photo:getFormattedMetadata( 'caption' ),
 		keywordTags = params.photo:getFormattedMetadata( 'keywordTagsForExport' )
@@ -88,13 +87,19 @@ local uploadPhoto = function ( propertyTable, params )
 		mimeChunks[ #mimeChunks + 1 ] = { name = argName, value = argValue }
 	end
 
-	-- local filePath = params.filePath
-	-- local fileName = LrPathUtils.leafName( filePath )
-	-- mimeChunks[ #mimeChunks + 1 ] = { name = 'photo', fileName = fileName, filePath = filePath, contentType = 'application/octet-stream' }
+	local filePath = params.filePath
+	local fileName = LrPathUtils.leafName( filePath )
+	mimeChunks[ #mimeChunks + 1 ] = { name = 'photo', fileName = fileName, filePath = filePath, contentType = 'image/jpeg' }
 
 	logger:tracef("POSTing to %s", propertyTable.url)
 
 	local result, hdrs = LrHttp.postMultipart( propertyTable.url, mimeChunks )
+	logger:tracef("Body: %s", result)
+	logger:trace("Headers:")
+	for i = 1, #hdrs do
+		local hdr = hdrs[i]
+		logger:tracef("\t%s: \"%s\"", hdr.field, hdr.value)
+	end
 
 end
 
@@ -124,7 +129,6 @@ publisher.processRenderedPhotos = function( functionContext, exportContext )
 		if not rendition.wasSkipped then
 
 			local success, pathOrMessage = rendition:waitForRender()
-			
 
 			progressScope:setPortionComplete( ( i - 0.5 ) / nPhotos )
 			if progressScope:isCanceled() then break end
