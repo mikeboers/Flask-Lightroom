@@ -1,0 +1,19 @@
+
+- include "type=photo" or "type=collection"
+- publish collections
+
+- How to deal with photos being in several collections? Are the IDs
+  stored per-collection? Is our extra metadata stored per-collection or
+  per photo?
+
+- Add several signing methods:
+    - Old-style FLickr API, but with HMAC instead
+    - Oauth
+
+- Allow metadata to be renamed: "keywords=keywordTags"
+
+- Should I start defining a real API (based on JSON) or should I keep it
+  as generic as possible? Since anyone using this will likely need to do
+  some custom coding on the server side, it isn't a huge stretch to make
+  it use JSON, or whatever. Interaction with other existing services
+  will likely have their own plugins.
