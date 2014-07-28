@@ -17,3 +17,13 @@
   some custom coding on the server side, it isn't a huge stretch to make
   it use JSON, or whatever. Interaction with other existing services
   will likely have their own plugins.
+
+- HMAC signatures from http://regex.info/code/sha1.lua
+
+- Flask blueprint that you override a few methods of
+    
+    def create_photo(self, file):
+        return id
+    def update(photo(self, file):
+        # pass
+    def photo_uploaded(self, id, file):

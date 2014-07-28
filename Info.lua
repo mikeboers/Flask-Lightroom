@@ -3,15 +3,15 @@ return {
 	LrSdkVersion = 3.0,
 	LrSdkMinimumVersion = 3.0,
 
-	LrToolkitIdentifier = 'com.mikeboers.lightroom.export.webhooks',
-	LrPluginName = "WebHooks",
+	LrToolkitIdentifier = 'com.mikeboers.lightroom.export.flask',
+	LrPluginName = "Flask",
 	
 	LrExportServiceProvider = {
-		title = "WebHooks",
-		file = 'WebHooksPublishServiceProvider.lua',
+		title = "Flask",
+		file = 'FlaskPublishServiceProvider.lua',
 	},
 	
-	LrMetadataProvider = 'WebHooksMetadataDefinition.lua',
+	LrMetadataProvider = 'FlaskMetadataDefinition.lua',
 	
 	VERSION = {
 		major=0,

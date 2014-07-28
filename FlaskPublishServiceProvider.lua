@@ -8,7 +8,7 @@ local LrLogger = import 'LrLogger'
 local bind = LrView.bind
 local share = LrView.share
 
-local logger = LrLogger('WebHooks')
+local logger = LrLogger('Flask')
 
 logger:enable("print")
 logger:info("Loading module...")
@@ -30,7 +30,7 @@ publisher.canExportVideo = false
 
 
 publisher.exportPresetFields = {
-	{key='url', default='http://example.com/endpoint'},
+	{key='url', default='http://example.com/api/lightroom'},
 	{key='extraData', default=''},
 	{key='metadata', default='title,caption,keywordTags'},
 }
@@ -61,12 +61,12 @@ end
 publisher.sectionsForTopOfDialog = function(f, propertyTable)
 	return {
 		{
-			title = "Web Hooks",
+			title = "Flask",
 
 			f:row {
 				f:static_text {
 					title = "Endpoint URL",
-					width = share 'WebHookTitleSectionLabel'
+					width = share 'FlaskTitleSectionLabel'
 				},
 				f:edit_field {
 					value = bind 'url',
@@ -77,8 +77,20 @@ publisher.sectionsForTopOfDialog = function(f, propertyTable)
 
 			f:row {
 				f:static_text {
+					title = "HMAC Key",
+					width = share 'FlaskTitleSectionLabel'
+				},
+				f:edit_field {
+					value = bind 'hmacKey',
+					immediate = false,
+					width = 375
+				},
+			},
+
+			f:row {
+				f:static_text {
 					title = "Metadata to Include\n(comma or space seperated)",
-					width = share 'WebHookTitleSectionLabel'
+					width = share 'FlaskTitleSectionLabel'
 				},
 				f:edit_field {
 					value = bind 'metadata',
@@ -91,7 +103,7 @@ publisher.sectionsForTopOfDialog = function(f, propertyTable)
 			f:row {
 				f:static_text {
 					title = "Extra Data\n(query encoded)",
-					width = share 'WebHookTitleSectionLabel'
+					width = share 'FlaskTitleSectionLabel'
 				},
 				f:edit_field {
 					value = bind 'extraData',
@@ -146,7 +158,7 @@ local uploadPhoto = function (propertyTable, params)
 	}
 
 
-	local body, headers = LrHttp.postMultipart(propertyTable.url, postData)
+	local body, headers = LrHttp.postMultipart(propertyTable.url, postData, {}, 5)
 	logger:tracef("Body: %s", body)
 
 	log = "Response Headers:"
@@ -168,8 +180,8 @@ publisher.processRenderedPhotos = function(functionContext, exportContext)
 	local nPhotos = exportSession:countRenditions()
 	local progressScope = exportContext:configureProgress({
 		title = nPhotos > 1
-			and string.format("POSTing %d photos to WebHook", nPhotos)
-			or "POSTing one photo to WebHook"
+			and string.format("POSTing %d photos to Flask", nPhotos)
+			or "POSTing one photo to Flask"
 	})
 
 	for i, rendition in exportContext:renditions { stopIfCanceled = true } do
