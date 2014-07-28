@@ -30,9 +30,10 @@ publisher.canExportVideo = false
 
 
 publisher.exportPresetFields = {
-	{key='url', default='http://example.com/api/lightroom'},
+	{key='endpointURL', default='http://example.com/api/lightroom'},
+	{key='extraHeaders', default=''},
 	{key='extraData', default=''},
-	{key='metadata', default='title,caption,keywordTags'},
+	{key='metadataToInclude', default='title,caption,keywordTags'},
 }
 
 -- publisher.startDialog = function(propertyTable)
@@ -69,7 +70,7 @@ publisher.sectionsForTopOfDialog = function(f, propertyTable)
 					width = share 'FlaskTitleSectionLabel'
 				},
 				f:edit_field {
-					value = bind 'url',
+					value = bind 'endpointURL',
 					immediate = false,
 					width = 375
 				},
@@ -77,13 +78,14 @@ publisher.sectionsForTopOfDialog = function(f, propertyTable)
 
 			f:row {
 				f:static_text {
-					title = "HMAC Key",
+					title = "Extra Headers\n(one per line)",
 					width = share 'FlaskTitleSectionLabel'
 				},
 				f:edit_field {
-					value = bind 'hmacKey',
+					value = bind 'extraHeaders',
 					immediate = false,
-					width = 375
+					width = 375,
+					height_in_lines = 5,
 				},
 			},
 
@@ -93,7 +95,7 @@ publisher.sectionsForTopOfDialog = function(f, propertyTable)
 					width = share 'FlaskTitleSectionLabel'
 				},
 				f:edit_field {
-					value = bind 'metadata',
+					value = bind 'metadataToInclude',
 					immediate = false,
 					width = 375,
 					height_in_lines = 2,
@@ -124,9 +126,10 @@ local uploadPhoto = function (propertyTable, params)
 	local log
 
 	local postData = {}
+	local postHeaders = {}
 
 	-- Include requested metadata.
-	for name in string.gmatch(propertyTable.metadata, "%a+") do
+	for name in string.gmatch(propertyTable.metadataToInclude, "%a+") do
 		local value = params.photo:getFormattedMetadata(name)
 		if value then
 			postData[#postData + 1] = {name=name, value=value}
@@ -140,10 +143,27 @@ local uploadPhoto = function (propertyTable, params)
 		end
 	end
 
+	-- Add published ID
+	if params.publishedID then
+		postData[#postData + 1] = {name="publishedID", value=params.publishedID}
+	end
+	postData[#postData + 1] = {name="collectionName", value=params.collection:getName()}
+
+	-- Add extra headers.
+	for line in string.gmatch(propertyTable.extraHeaders, "[^\n]+") do
+		local field, value = string.match(line, "^%s*(%S+)%s*:%s*(.+)%s*$")
+		if field and value then
+			postHeaders[#postHeaders + 1] = {field=field, value=value}
+		end
+	end
+
 	-- Log what we are posting.
-	log = string.format("POST to %s:", propertyTable.url)
+	log = string.format("POST to %s:", propertyTable.endpointURL)
+	for i = 1, #postHeaders do
+		log = log .. string.format("\n\t%s: %s", postHeaders[i].field, postHeaders[i].value)
+	end
 	for i = 1, #postData do
-		log = log .. string.format("\n\t%s: \"%s\"", postData[i].name, postData[i].value)
+		log = log .. string.format("\n\t%s=\"%s\"", postData[i].name, postData[i].value)
 	end
 	logger:trace(log)
 
@@ -154,19 +174,24 @@ local uploadPhoto = function (propertyTable, params)
 		name='photo',
 		fileName=fileName,
 		filePath=filePath,
-		contentType='image/jpeg',
+		contentType='image/jpeg', -- So far we only allow JPEGs.
 	}
 
+	-- POST!.
+	local body, headers = LrHttp.postMultipart(propertyTable.endpointURL, postData, postHeaders, 5)
 
-	local body, headers = LrHttp.postMultipart(propertyTable.url, postData, {}, 5)
-	logger:tracef("Body: %s", body)
-
-	log = "Response Headers:"
+	-- Lets be verbose while formating the response.
+	local res = {}
+	log = string.format("POST returned %s", headers.status)
 	for i = 1, #headers do
 		local header = headers[i]
 		log = log .. string.format("\n\t%s: \"%s\"", header.field, header.value)
+		res[header.field] = header.value
 	end
 	logger:trace(log)
+	res.status = headers.status
+
+	return res
 
 end
 
@@ -176,37 +201,47 @@ publisher.processRenderedPhotos = function(functionContext, exportContext)
 	
 	local exportSession = exportContext.exportSession
 	local propertyTable = assert(exportContext.propertyTable)
+	local collection = exportContext.publishedCollection
 
 	local nPhotos = exportSession:countRenditions()
 	local progressScope = exportContext:configureProgress({
 		title = nPhotos > 1
-			and string.format("POSTing %d photos to Flask", nPhotos)
-			or "POSTing one photo to Flask"
+			and string.format("Uploading %d photos to Flask", nPhotos)
+			or "Uploading one photo to Flask"
 	})
 
 	for i, rendition in exportContext:renditions { stopIfCanceled = true } do
 	
-		-- Update progress scope.
-		
+		-- Update progress.
 		progressScope:setPortionComplete((i - 1) / nPhotos)
 		
 		-- Get next photo.
-
 		local photo = rendition.photo
-		
 		if not rendition.wasSkipped then
 
 			local success, pathOrMessage = rendition:waitForRender()
 
+			-- Update progress.
 			progressScope:setPortionComplete((i - 0.5) / nPhotos)
 			if progressScope:isCanceled() then break end
 			
-			
+			-- Hand off to the uploader.
 			if success then
-				uploadPhoto(propertyTable, {
+				local res = uploadPhoto(propertyTable, {
+					collection = collection,
 					photo = photo,
 					filePath = pathOrMessage,
+					publishedID = rendition.publishedPhotoId
 				})
+
+				if (res.status == 200 or res.status == 201) and res.Location and res.Location ~= "" then
+					logger:trace(string.format('recording ID/location %s', res.Location))
+					rendition:recordPublishedPhotoId(res.Location)
+					rendition:recordPublishedPhotoUrl(res.Location)
+				else
+					logger:trace(string.format('Upload failed with %d and location %s', res.status, res.Location))
+				end
+
 			end
 
 		end

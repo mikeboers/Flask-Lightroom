@@ -11,8 +11,6 @@ return {
 		file = 'FlaskPublishServiceProvider.lua',
 	},
 	
-	LrMetadataProvider = 'FlaskMetadataDefinition.lua',
-	
 	VERSION = {
 		major=0,
 		minor=1,
