@@ -1,4 +1,5 @@
 
+local LrApplication = import 'LrApplication'
 local LrDialogs = import 'LrDialogs'
 local LrView = import 'LrView'
 local LrHttp = import 'LrHttp'
@@ -121,6 +122,19 @@ publisher.sectionsForTopOfDialog = function(f, propertyTable)
 end
 
 
+local findOtherId = function (service, photo)
+	local ci, collection, pi, publishedPhoto
+	for ci, collection in ipairs(service:getChildCollections()) do
+		for pi, publishedPhoto in ipairs(collection:getPublishedPhotos()) do
+			local otherPhoto = publishedPhoto:getPhoto()
+			if (photo.localIdentifier == otherPhoto.localIdentifier and publishedPhoto:getRemoteId()) then
+				return publishedPhoto:getRemoteId()
+			end
+		end
+	end
+end
+
+
 local uploadPhoto = function (propertyTable, params)
 	
 	local log
@@ -144,10 +158,20 @@ local uploadPhoto = function (propertyTable, params)
 	end
 
 	-- Add published ID
-	if params.publishedID then
-		postData[#postData + 1] = {name="publishedID", value=params.publishedID}
+	if params.rendition.publishedPhotoId then
+		postData[#postData + 1] = {name="publishedPhotoID", value=params.rendition.publishedPhotoId}
+	else
+		local otherId = findOtherId(params.service, params.photo)
+		if otherId then
+			postData[#postData + 1] = {name="publishedPhotoID", value=otherId}
+		end
 	end
+
+	-- Add collection name and ID
 	postData[#postData + 1] = {name="collectionName", value=params.collection:getName()}
+	if params.collection:getRemoteId() then
+		postData[#postData + 1] = {name="publishedCollectionID", value=params.collection:getRemoteId()}
+	end
 
 	-- Add extra headers.
 	for line in string.gmatch(propertyTable.extraHeaders, "[^\n]+") do
@@ -177,7 +201,7 @@ local uploadPhoto = function (propertyTable, params)
 		contentType='image/jpeg', -- So far we only allow JPEGs.
 	}
 
-	-- POST!.
+	-- POST!
 	local body, headers = LrHttp.postMultipart(propertyTable.endpointURL, postData, postHeaders, 5)
 
 	-- Lets be verbose while formating the response.
@@ -185,7 +209,7 @@ local uploadPhoto = function (propertyTable, params)
 	log = string.format("POST returned %s", headers.status)
 	for i = 1, #headers do
 		local header = headers[i]
-		log = log .. string.format("\n\t%s: \"%s\"", header.field, header.value)
+		log = log .. string.format("\n\t%s: %s", header.field, header.value)
 		res[header.field] = header.value
 	end
 	logger:trace(log)
@@ -199,11 +223,13 @@ publisher.processRenderedPhotos = function(functionContext, exportContext)
 
 	-- See page 54 of the PDF for an example loop.
 	
-	local exportSession = exportContext.exportSession
+	local catalog = LrApplication.activeCatalog()
+	local session = exportContext.exportSession
+	local service = exportContext.publishService
 	local propertyTable = assert(exportContext.propertyTable)
 	local collection = exportContext.publishedCollection
 
-	local nPhotos = exportSession:countRenditions()
+	local nPhotos = session:countRenditions()
 	local progressScope = exportContext:configureProgress({
 		title = nPhotos > 1
 			and string.format("Uploading %d photos to Flask", nPhotos)
@@ -228,18 +254,35 @@ publisher.processRenderedPhotos = function(functionContext, exportContext)
 			-- Hand off to the uploader.
 			if success then
 				local res = uploadPhoto(propertyTable, {
+					service = service,
 					collection = collection,
+					rendition = rendition,
 					photo = photo,
 					filePath = pathOrMessage,
-					publishedID = rendition.publishedPhotoId
 				})
 
 				if (res.status == 200 or res.status == 201) and res.Location and res.Location ~= "" then
-					logger:trace(string.format('recording ID/location %s', res.Location))
+
 					rendition:recordPublishedPhotoId(res.Location)
 					rendition:recordPublishedPhotoUrl(res.Location)
+					logger:trace(string.format('photo ID/URL %s', res.Location))
+
+					-- Remember the URL for the collection as well.
+					if (res.Link and res.Link ~= "") then
+						local linkUrl = string.match(res.Link, "^(.+); rel=collection$")
+						if (linkUrl) then
+							catalog:withWriteAccessDo("com.mikeboers.flask.updateCollectionID", function()
+								collection:setRemoteId(linkUrl)
+								collection:setRemoteUrl(linkUrl)
+								logger:trace(string.format('collection ID/URL %s', linkUrl))
+							end)
+						else
+							logger:trace(string.format("malformed link header: %s", res.Link))
+						end
+					end
+
 				else
-					logger:trace(string.format('Upload failed with %d and location %s', res.status, res.Location))
+					logger:trace(string.format('Upload failed with code %s and location %s', res.status, res.Location))
 				end
 
 			end
