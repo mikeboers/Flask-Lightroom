@@ -175,7 +175,8 @@ local uploadPhoto = function (propertyTable, params)
 	end
 
 	-- Log what we are posting.
-	log = string.format("POST to %s:", propertyTable.endpointURL)
+	local endpointUrl = propertyTable.endpointURL .. '/upload'
+	log = string.format("POST to %s:", endpointUrl)
 	for i = 1, #postHeaders do
 		log = log .. string.format("\n\t%s: %s", postHeaders[i].field, postHeaders[i].value)
 	end
@@ -195,7 +196,7 @@ local uploadPhoto = function (propertyTable, params)
 	}
 
 	-- POST!
-	local body, headers = LrHttp.postMultipart(propertyTable.endpointURL, postData, postHeaders, 5)
+	local body, headers = LrHttp.postMultipart(endpointUrl, postData, postHeaders, 5)
 
 	-- Lets be verbose while formating the response.
 	local res = {}

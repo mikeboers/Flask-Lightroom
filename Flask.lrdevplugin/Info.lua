@@ -12,6 +12,16 @@ return {
 		title = "Flask",
 		file = 'FlaskPublishServiceProvider.lua',
 	},
+
+    LrLibraryMenuItems = {
+        {
+            title = "Discover Published Photos",
+            file  = "FlaskDiscoverPhotos.lua",
+        }, {
+            title = "Development Sandbox",
+            file  = "FlaskSandbox.lua",
+        },
+    },
 	
 	VERSION = {
 		major =    0,
