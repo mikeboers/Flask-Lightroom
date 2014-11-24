@@ -138,7 +138,19 @@ Lr.FunctionContext.callWithContext('FlaskDiscoverPhotos', function(context)
         end
     end
     if #publishedCollections == 0 then
-        error("Please select a published collecton.")
+
+        local button = Lr.Dialogs.confirm(
+            "Would you like to relink all collections?",
+            "We will scan across all Flask published collections if you continue."
+        )
+        if button ~= "ok" then return end
+        local service, collection
+        for _, service in ipairs(catalog:getPublishServices(_PLUGIN.id)) do
+            for _, collection in ipairs(service:getChildCollections()) do
+                append(publishedCollections, collection)
+            end
+        end
+
     elseif #sources == 0 then
         error("Please select a photo source.")
     end

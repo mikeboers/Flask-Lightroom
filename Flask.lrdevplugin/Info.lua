@@ -15,6 +15,9 @@ return {
 
     LrLibraryMenuItems = {
         {
+            title = "Discover Published Collections",
+            file  = "FlaskDiscoverCollections.lua",
+        }, {
             title = "Discover Published Photos",
             file  = "FlaskDiscoverPhotos.lua",
         }, {
