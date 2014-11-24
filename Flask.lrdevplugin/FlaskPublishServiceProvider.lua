@@ -6,6 +6,9 @@ local LrHttp = import 'LrHttp'
 local LrPathUtils = import 'LrPathUtils'
 local LrLogger = import 'LrLogger'
 
+local utils = require 'FlaskUtils'
+
+
 local bind = LrView.bind
 local share = LrView.share
 
@@ -122,17 +125,7 @@ publisher.sectionsForTopOfDialog = function(f, propertyTable)
 end
 
 
-local findOtherId = function (service, photo)
-	local ci, collection, pi, publishedPhoto
-	for ci, collection in ipairs(service:getChildCollections()) do
-		for pi, publishedPhoto in ipairs(collection:getPublishedPhotos()) do
-			local otherPhoto = publishedPhoto:getPhoto()
-			if (photo.localIdentifier == otherPhoto.localIdentifier and publishedPhoto:getRemoteId()) then
-				return publishedPhoto:getRemoteId()
-			end
-		end
-	end
-end
+
 
 
 local uploadPhoto = function (propertyTable, params)
@@ -161,9 +154,9 @@ local uploadPhoto = function (propertyTable, params)
 	if params.rendition.publishedPhotoId then
 		postData[#postData + 1] = {name="publishedPhotoID", value=params.rendition.publishedPhotoId}
 	else
-		local otherId = findOtherId(params.service, params.photo)
-		if otherId then
-			postData[#postData + 1] = {name="publishedPhotoID", value=otherId}
+		local globalRemoteId = utils.getServiceMetadata(params.service, params.photo, 'lastRemoteId')
+		if globalRemoteId then
+			postData[#postData + 1] = {name="publishedPhotoID", value=globalRemoteId}
 		end
 	end
 
@@ -253,6 +246,7 @@ publisher.processRenderedPhotos = function(functionContext, exportContext)
 			
 			-- Hand off to the uploader.
 			if success then
+
 				local res = uploadPhoto(propertyTable, {
 					service = service,
 					collection = collection,
@@ -267,22 +261,29 @@ publisher.processRenderedPhotos = function(functionContext, exportContext)
 					rendition:recordPublishedPhotoUrl(res.Location)
 					logger:trace(string.format('photo ID/URL %s', res.Location))
 
-					-- Remember the URL for the collection as well.
-					if (res.Link and res.Link ~= "") then
-						local linkUrl = string.match(res.Link, "^(.+); rel=collection$")
-						if (linkUrl) then
-							catalog:withWriteAccessDo("com.mikeboers.flask.updateCollectionID", function()
+					-- We need write access for utils.setServiceMetadata
+					-- and for collection:setRemoteId/Url.
+					catalog:withWriteAccessDo("FlaskPublishServiceProvider.processRenderedPhotos", function()
+
+						utils.setServiceMetadata(service, photo, 'lastRemoteId', res.Location)
+
+						-- Remember the URL for the collection as well.
+						if (res.Link and res.Link ~= "") then
+							local linkUrl = string.match(res.Link, "^(.+); rel=collection$")
+							if (linkUrl) then
 								collection:setRemoteId(linkUrl)
 								collection:setRemoteUrl(linkUrl)
 								logger:trace(string.format('collection ID/URL %s', linkUrl))
-							end)
-						else
-							logger:trace(string.format("malformed link header: %s", res.Link))
+							else
+								logger:trace(string.format("malformed link header: %s", res.Link))
+							end
 						end
-					end
+
+					end)
 
 				else
 					logger:trace(string.format('Upload failed with code %s and location %s', res.status, res.Location))
+
 				end
 
 			end

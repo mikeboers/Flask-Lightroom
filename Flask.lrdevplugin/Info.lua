@@ -1,21 +1,23 @@
 return {
 
-	LrSdkVersion = 3.0,
-	LrSdkMinimumVersion = 3.0,
+	LrSdkVersion = 5.0,
+	LrSdkMinimumVersion = 5.0,
 
 	LrToolkitIdentifier = 'com.mikeboers.lightroom.export.flask',
 	LrPluginName = "Flask",
 	
+	LrMetadataProvider = 'FlaskMetadata.lua',
+
 	LrExportServiceProvider = {
 		title = "Flask",
 		file = 'FlaskPublishServiceProvider.lua',
 	},
 	
 	VERSION = {
-		major=0,
-		minor=1,
-		revision=0,
-		build=0,
+		major =    0,
+		minor =    1,
+		revision = 0,
+		build =    0,
 	},
 
 }
