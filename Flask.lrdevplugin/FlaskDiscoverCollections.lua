@@ -38,7 +38,9 @@ Lr.FunctionContext.callWithContext('FlaskDiscoverCollections', function(context)
 
         local collection
         for _, collection in ipairs(service:getChildCollections()) do
-            collectionsById[collection:getRemoteId()] = collection
+            if collection:getRemoteId() then
+                collectionsById[collection:getRemoteId()] = collection
+            end
         end
 
         -- Add extra headers.
@@ -67,19 +69,16 @@ Lr.FunctionContext.callWithContext('FlaskDiscoverCollections', function(context)
 
             log:trace(string.format('%d at %s -> %s', remoteCollection.id, remoteCollection.url, remoteCollection.title))
 
-            if not collectionsById[remoteCollection.title] then
+            if not collectionsById[remoteCollection.url] then
                 catalog:withWriteAccessDo('FlaskDiscoverPhotos', function()
-
                     local collection = service:createPublishedCollection(
                         remoteCollection.title,
                         nil,
-                        false
+                        true
                     )
                     collection:setRemoteId(remoteCollection.url)
                     collection:setRemoteUrl(remoteCollection.url)
-                    
                 end)
-
             end
 
         end

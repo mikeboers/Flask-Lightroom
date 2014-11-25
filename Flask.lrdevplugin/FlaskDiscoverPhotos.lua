@@ -128,6 +128,10 @@ Lr.FunctionContext.callWithContext('FlaskDiscoverPhotos', function(context)
 
     local source, publishedCollection
 
+    local progress = Lr.ProgressScope {
+        title = "Discovering Published Photos"
+    }
+    progress:attachToFunctionContext(context)
 
     -- Split up the selections.
     for _, source in ipairs(catalog:getActiveSources()) do
